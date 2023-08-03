@@ -5,65 +5,111 @@ data Symbol : Set where
   CON : Symbol
   DUP : Symbol
 
-data Slot : Set where
-  S0 : Slot
-  S1 : Slot
-  S2 : Slot
+arity : Symbol -> Nat
+arity ERA = 1
+arity CON = 3
+arity DUP = 3
 
-record Port (len : Nat) : Set where
+record Port (len : Nat) (types : Fin len -> Symbol) : Set where
   constructor port
-  field addr : Fin len
-        slot : Slot
+  field
+    -- this port is of node:
+    node : Fin len
+    -- this port has this many slots:
+    slot : Fin (arity (types node))
 
-record Wiring (len : Nat) : Set where
-  constructor wiring
-  field enter : Port len -> Port len
-        invol : ∀ x -> enter (enter x) == x
-        nofix : ∀ x -> enter x != x
+record WellConnected {A : Set} (f : A -> A) : Set where
+  field
+    cycles-back : ∀ x -> f (f x) == x
+    not-same : ∀ x -> f x != x
+
 
 record Graph (len : Nat) : Set where
   constructor graph
-  field types : Fin len -> Symbol
-        wires : Wiring len
+  field
+    types : Fin len -> Symbol
+    enter : Port len types -> Port len types
+    well-connected : WellConnected enter
 
 -- TODO:
 -- Converts a list of nats to a graph. Example:
 -- build-graph [(0,1,1),(0,2,2)] == example
-build-graph : (nodes : List (Pair Nat Nat)) -> Maybe (Graph (len nodes))
-build-graph = ?
+--build-graph : (nodes : List (Pair Symbol (Pair Nat (Pair Nat Nat)))) -> Maybe (Graph (len nodes))
+--build-graph = {!!}
 
 -- Example graph:
 -- (a b b)
 -- (a c c)
-example : Graph 2
-example = graph types wires where
-
+example_con_con : Graph 2
+example_con_con = graph types enter well-connected where
   types : Fin 2 -> Symbol
-  types fz      = CON
-  types (fs fz) = CON
+  types 0F = CON
+  types 1F = CON
 
-  wires : Wiring 2
-  wires = wiring enter invol nofix where
+  enter : Port 2 types -> Port 2 types 
+  enter (port 0F 0F) = port 1F 0F
+  enter (port 0F 1F) = port 0F 2F
+  enter (port 0F 2F) = port 0F 1F
+  enter (port 1F 0F) = port 0F 0F
+  enter (port 1F 1F) = port 1F 2F
+  enter (port 1F 2F) = port 1F 1F
 
-    enter : (x : Port 2) → Port 2
-    enter (port fz      S0) = port (fs fz) S0
-    enter (port fz      S1) = port fz S2
-    enter (port fz      S2) = port fz S1
-    enter (port (fs fz) S0) = port fz S0
-    enter (port (fs fz) S1) = port (fs fz) S2
-    enter (port (fs fz) S2) = port (fs fz) S1
+  well-connected : WellConnected enter
+  well-connected = record
+    { cycles-back = cycles-back
+    ; not-same = not-same }
+      where
 
-    invol : (x : Port 2) -> enter (enter x) == x
-    invol (port fz      S0) = refl
-    invol (port fz      S1) = refl
-    invol (port fz      S2) = refl
-    invol (port (fs fz) S0) = refl
-    invol (port (fs fz) S1) = refl
-    invol (port (fs fz) S2) = refl
+      cycles-back : (x : Port 2 types) -> enter (enter x) == x
+      cycles-back (port 0F 0F) = refl
+      cycles-back (port 0F 1F) = refl
+      cycles-back (port 0F 2F) = refl
+      cycles-back (port 1F 0F) = refl
+      cycles-back (port 1F 1F) = refl
+      cycles-back (port 1F 2F) = refl
 
-    nofix : (x : Port 2) -> enter x == x -> Empty
-    nofix (port fz      S0) ()
-    nofix (port fz      S1) ()
-    nofix (port fz      S2) ()
-    nofix (port (fs fz) S0) ()
-    nofix (port (fs fz) S1) ()
+      not-same : (x : Port 2 types) -> Not (enter x == x)
+      not-same (port 0F 0F) ()
+      not-same (port 0F 1F) ()
+      not-same (port 0F 2F) ()
+      not-same (port 1F 0F) ()
+      not-same (port 1F 1F) ()
+      not-same (port 1F 2F) ()
+
+example_con_era : Graph 4
+example_con_era = graph types enter well-connected where
+  types : Fin 4 -> Symbol
+  types 0F = ERA
+  types 1F = CON
+  types 2F = ERA
+  types 3F = ERA
+
+  enter : Port 4 types -> Port 4 types
+  enter (port 0F 0F) = port 1F 0F
+  enter (port 1F 0F) = port 0F 0F
+  enter (port 1F 1F) = port 2F 0F
+  enter (port 1F 2F) = port 3F 0F
+  enter (port 2F 0F) = port 1F 1F
+  enter (port 3F 0F) = port 1F 2F
+
+  well-connected : WellConnected enter
+  well-connected = record
+    { cycles-back = cycles-back
+    ; not-same = not-same }
+      where
+
+      cycles-back : (x : Port 4 types) -> enter (enter x) == x      
+      cycles-back (port 0F 0F) = refl
+      cycles-back (port 1F 0F) = refl
+      cycles-back (port 1F 1F) = refl
+      cycles-back (port 1F 2F) = refl
+      cycles-back (port 2F 0F) = refl
+      cycles-back (port 3F 0F) = refl
+
+      not-same : (x : Port 4 types) -> Not (enter x == x)
+      not-same (port 0F 0F) ()
+      not-same (port 1F 0F) ()
+      not-same (port 1F 1F) ()
+      not-same (port 1F 2F) ()
+      not-same (port 2F 0F) ()
+      not-same (port 3F 0F) ()
