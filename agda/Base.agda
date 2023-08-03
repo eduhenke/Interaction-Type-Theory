@@ -83,6 +83,71 @@ absurd ()
 foo : ∀ x y -> succ x != succ y -> x != y
 foo x y nsxy xy = nsxy (apl succ xy)
 
+-- decidable:
+-- allows us to get the evidence or concrete result of a decidable procedure or both
+data Dec (A : Set) : Set where
+  yes :      A  -> Dec A
+  no  : (Not A) -> Dec A
+
+-- useful for allowing arguments that only respect a certain condition
+-- more used for statically known values
+-- ... -> {_ : T (decidable-procedure a b)} -> ...
+T : Bool -> Set
+T true = Unit
+T false = Empty
+
+erase : ∀ {A : Set} → Dec A → Bool
+erase (yes x)  =  true
+erase (no ¬x)  =  false
+
+toWitness : ∀ {A : Set} {D : Dec A} → T (erase D) → A
+toWitness {A} {yes x} unit  =  x
+toWitness {A} {no ¬x} ()
+
+fromWitness : ∀ {A : Set} {D : Dec A} → A → T (erase D)
+fromWitness {A} {yes x} _  =  unit
+fromWitness {A} {no ¬x} x  =  ¬x x
+
+-- less-than-equal
+infix 4 _<=_
+data _<=_ : Nat -> Nat -> Set where
+  z<=n : ∀ {n : Nat} -> zero <= n
+  s<=s : ∀ {m n : Nat} -> m <= n -> succ m <= succ n
+
+¬s<=z : ∀ {m : Nat} → Not (succ m <= zero)
+¬s<=z ()
+
+¬s<=s : ∀ {m n : Nat} → Not (m <= n) → Not (succ m <= succ n)
+¬s<=s ¬m<=n (s<=s m<=n) = ¬m<=n m<=n
+
+_<=?_ : ∀ (m n : Nat) → Dec (m <= n)
+zero  <=? n                   =  yes z<=n
+succ m <=? zero                =  no ¬s<=z
+succ m <=? succ n with m <=? n
+...               | yes m<=n  =  yes (s<=s m<=n)
+...               | no ¬m<=n  =  no (¬s<=s ¬m<=n)
+
+
+-- allows to build any Fin n, if the values are statically known:
+-- fn 50 : Fin 100
+fn : ∀ {m : Nat} -> (n : Nat) -> {n<=m : T (erase ((succ n) <=? m))} -> Fin m
+fn {m} n {n<=m} = fn' n {toWitness n<=m}
+  where
+  fn' : ∀ {m : Nat} -> (n : Nat) -> {n<=m : (succ n) <= m} -> Fin m
+  fn' {succ m} zero {n<=m} = fz
+  fn' {succ m} (succ n) {s<=s n<=m} = fs (fn' n {n<=m})
+
+-- useful in pattern matching of Fin
+pattern 0F = fz
+pattern 1F = fs 0F
+pattern 2F = fs 1F
+pattern 3F = fs 2F
+pattern 4F = fs 3F
+pattern 5F = fs 4F
+pattern 6F = fs 5F
+pattern 7F = fs 6F
+pattern 8F = fs 7F
+pattern 9F = fs 8F
 
 -- Well Founded Stuff
 
