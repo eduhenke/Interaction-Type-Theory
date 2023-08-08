@@ -7,7 +7,7 @@ open import Agda.Builtin.List public renaming ( [] to nil ; _∷_ to _#_ )
 open import Agda.Builtin.Maybe public renaming ( just to some ; nothing to none )
 open import Agda.Builtin.Nat public renaming ( suc to succ ; _==_ to eq )
 open import Agda.Builtin.String public
-open import Agda.Builtin.Sigma public renaming ( Σ to S )
+open import Agda.Builtin.Sigma public using ( Σ; _,_ )
 open import Agda.Builtin.TrustMe public
 open import Agda.Builtin.Unit public renaming ( ⊤ to Unit ; tt to unit )
 open import Agda.Primitive public
@@ -17,6 +17,39 @@ data Empty : Set where
 data Pair (a b : Set) : Set where
   pair : a -> b -> Pair a b
 
+infix 2 Σ-syntax
+
+Σ-syntax : ∀ {a b} → (A : Set a) → (A → Set b) → Set (a ⊔ b)
+Σ-syntax = Σ
+
+syntax Σ-syntax A (λ x → B) = Σ[ x ∈ A ] B
+
+------------------------------------------------------------------------
+-- Definition of non-dependent products
+
+infixr 2 _×_
+
+_×_ : ∀ {a b} → (A : Set a) (B : Set b) → Set (a ⊔ b)
+A × B = Σ[ x ∈ A ] B
+
+------------------------------------------------------------------------
+-- Existential quantifiers
+
+∃ : ∀ {a b} → {A : Set a} → (A → Set b) → Set (a ⊔ b)
+∃ = Σ _
+
+∃₂ : ∀ {a b c} → {A : Set a} {B : A → Set b}
+     (C : (x : A) → B x → Set c) → Set (a ⊔ b ⊔ c)
+∃₂ C = ∃ λ a → ∃ λ b → C a b
+
+-- Syntax
+
+∃-syntax :  ∀ {a b} → {A : Set a} → (A → Set b) → Set (a ⊔ b)
+∃-syntax = ∃
+
+syntax ∃-syntax (λ x → B) = ∃[ x ] B
+
+
 data Fin : Nat -> Set where
   fz : ∀ {n} -> Fin (succ n)
   fs : ∀ {n} -> Fin n -> Fin (succ n)
@@ -24,8 +57,8 @@ data Fin : Nat -> Set where
 Not : {a : Level} -> Set a -> Set a
 Not a = a -> Empty
 
-_!=_ : {a : Level} {A : Set a} -> A -> A -> Set a
-x != y = Not (x == y)
+_≢_ : {a : Level} {A : Set a} -> A -> A -> Set a
+x ≢ y = Not (x == y)
 
 if : ∀ {a : Set} -> Bool -> a -> a -> a
 if true  t f = t
@@ -67,6 +100,13 @@ Unwrap (some x) f = f x
 sym : ∀ {a} {A : Set a} {x y : A} -> x == y -> y == x
 sym refl = refl
 
+trans : ∀ {A : Set} {x y z : A}
+  → x == y
+  → y == z
+  → x == z
+trans refl refl  =  refl
+
+
 apl : ∀ {a b} {A : Set a} {B : Set b} (f : A -> B) {x y : A} -> x == y -> f x == f y
 apl f refl = refl
 
@@ -79,9 +119,6 @@ IsSome (some x) = Unit
 
 absurd : {a : Set} -> Empty -> a
 absurd ()
-
-foo : ∀ x y -> succ x != succ y -> x != y
-foo x y nsxy xy = nsxy (apl succ xy)
 
 -- decidable:
 -- allows us to get the evidence or concrete result of a decidable procedure or both
@@ -114,11 +151,31 @@ data _<=_ : Nat -> Nat -> Set where
   z<=n : ∀ {n : Nat} -> zero <= n
   s<=s : ∀ {m n : Nat} -> m <= n -> succ m <= succ n
 
+
+
+<=→<=s : ∀ {m n : Nat} → m <= n → m <= (succ n)
+<=→<=s z<=n = z<=n
+<=→<=s (s<=s m<=n) =
+  let ind = <=→<=s m<=n
+  in s<=s ind
+
 ¬s<=z : ∀ {m : Nat} → Not (succ m <= zero)
 ¬s<=z ()
 
 ¬s<=s : ∀ {m n : Nat} → Not (m <= n) → Not (succ m <= succ n)
 ¬s<=s ¬m<=n (s<=s m<=n) = ¬m<=n m<=n
+
+¬s<=s' : ∀ {m n : Nat} → Not (succ m <= succ n) → Not (m <= n)
+¬s<=s' ¬m<=n m<=n = ¬m<=n (s<=s m<=n)
+
+
+¬<=-inv : ∀ {m n : Nat} → Not (m <= n) → (succ n <= m)
+¬<=-inv {zero} {zero} ¬m<=n = absurd (¬m<=n z<=n)
+¬<=-inv {zero} {succ n} ¬m<=n = absurd (¬m<=n (<=→<=s z<=n))
+¬<=-inv {succ m} {zero} ¬m<=n = s<=s z<=n
+¬<=-inv {succ m} {succ n} ¬m<=n = s<=s ind
+  where
+  ind = ¬<=-inv (¬s<=s' ¬m<=n)
 
 _<=?_ : ∀ (m n : Nat) → Dec (m <= n)
 zero  <=? n                   =  yes z<=n
@@ -131,11 +188,11 @@ succ m <=? succ n with m <=? n
 -- allows to build any Fin n, if the values are statically known:
 -- fn 50 : Fin 100
 fn : ∀ {m : Nat} -> (n : Nat) -> {n<=m : T (erase ((succ n) <=? m))} -> Fin m
-fn {m} n {n<=m} = fn' n {toWitness n<=m}
+fn {m} n {n<=m} = fn' n (toWitness n<=m)
   where
-  fn' : ∀ {m : Nat} -> (n : Nat) -> {n<=m : (succ n) <= m} -> Fin m
-  fn' {succ m} zero {n<=m} = fz
-  fn' {succ m} (succ n) {s<=s n<=m} = fs (fn' n {n<=m})
+  fn' : ∀ {m : Nat} -> (n : Nat) -> (succ n) <= m -> Fin m
+  fn' {succ m} zero n<=m = fz
+  fn' {succ m} (succ n) (s<=s n<=m) = fs (fn' n n<=m)
 
 -- useful in pattern matching of Fin
 pattern 0F = fz
@@ -148,6 +205,80 @@ pattern 6F = fs 5F
 pattern 7F = fs 6F
 pattern 8F = fs 7F
 pattern 9F = fs 8F
+
+toNat : ∀ {n} → Fin n → Nat
+toNat fz    = zero
+toNat (fs i) = succ (toNat i)
+
+fromNat<= : {m n : Nat} → (succ m) <= n → Fin n
+fromNat<= {zero} (s<=s z<=n) = fz
+fromNat<= {succ m} {succ n} (s<=s m<=n) = fs (fromNat<= m<=n)
+
+
+toNat⁻¹ : ∀ {n : Nat} {f : Fin n} → Fin (toNat f) → Fin n
+toNat⁻¹ {succ n} {f} f' = f
+
+_∘_ : ∀ {a b c} {A : Set a} {B : A → Set b} {C : {x : A} → B x → Set c} →
+      (∀ {x} (y : B x) → C y) → (g : (x : A) → B x) →
+      ((x : A) → C (g x))
+f ∘ g = λ x → f (g x)
+{-# INLINE _∘_ #-}
+
+cong : ∀ {A B : Set} {x y : A} → (f : A → B) → x == y → f x == f y
+cong f refl = refl
+
+
+↑ : ∀ {m} → Fin m → Fin (succ m)
+↑ fz = fz
+↑ (fs i) = fs (↑ i)
+
+
+fpred : ∀ {n} → Fin n → Fin n
+fpred fz = fz
+fpred (fs f) = ↑ f
+
+lower₁ : ∀ {n : Nat} → (i : Fin (succ n)) → n ≢ toNat i → Fin n
+lower₁ {zero}  fz    ne = absurd (ne refl)
+lower₁ {succ n} fz    _  = fz
+lower₁ {succ n} (fs i) ne = fs (lower₁ i (ne ∘ cong succ))
+
+-- The function f(i,j) = if j>i then j-1 else j
+-- This is a variant of the thick function from Conor
+-- McBride's "First-order unification by structural recursion".
+punchOut : ∀ {n : Nat} {i j : Fin (succ n)} → i ≢ j → Fin n
+punchOut {_}     {fz}     {fz}  i≢j = absurd (i≢j refl)
+punchOut {_}     {fz}     {fs j} _   = j
+punchOut {succ _} {fs i}   {fz}  _   = fz
+punchOut {succ _} {fs i}   {fs j} i≢j = fs (punchOut (i≢j ∘ cong fs))
+
+punchOut² : ∀ {n : Nat} {i j k : Fin (succ (succ n))} → (i ≢ j) → (i ≢ k) → (j ≢ k) → Fin n
+punchOut² {n} {0F} {0F} {_} i≢j i≢k j≢k = absurd (i≢j refl)
+punchOut² {n} {0F} {_} {0F} i≢j i≢k j≢k = absurd (i≢k refl)
+punchOut² {zero} {0F} {1F} {1F} i≢j i≢k j≢k = absurd (j≢k refl)
+punchOut² {succ n} {0F} {fs j} {fs k} i≢j i≢k j≢k = 0F
+punchOut² {n} {_} {0F} {0F} i≢j i≢k j≢k = absurd (j≢k refl)
+punchOut² {zero} {1F} {0F} {1F} i≢j i≢k j≢k = absurd (i≢k refl)
+punchOut² {succ n} {fs i} {0F} {fs k} i≢j i≢k j≢k = punchOut (i≢k ∘ (sym ∘ cong fs))
+punchOut² {zero} {1F} {1F} {0F} i≢j i≢k j≢k = absurd (i≢j refl)
+punchOut² {succ n} {fs i} {fs j} {0F} i≢j i≢k j≢k = punchOut (i≢j ∘ (sym ∘ cong fs))
+punchOut² {zero} {_} {1F} {1F} i≢j i≢k j≢k = absurd (j≢k refl)
+punchOut² {succ n} {fs i} {fs j} {fs k} i≢j i≢k j≢k = fs (punchOut² (i≢j ∘ cong fs) (i≢k ∘ cong fs) (j≢k ∘ cong fs))
+
+-- punchOut²' : ∀ {n : Nat} {x a b : Fin (succ (succ n))} → (x ≢ a) → (x ≢ b) → (a ≢ b) → Fin n
+-- punchOut²' {_} {x} {a} {b} x≢a x≢b a≢b = {!!}
+--   where
+--   a' = punchOut a≢b
+--   b' = punchOut (a≢b ∘ sym)
+--   x'  = punchOut {i = ↑ a'} {j = x}  λ{ refl → {!!}}
+--   x'' = punchOut {i = b'}   {j = x'} λ{x₁ → {!!}}
+  
+
+-- The function f(i,j) = if j≥i then j+1 else j
+punchIn : ∀ {n} → Fin (succ n) → Fin n → Fin (succ n)
+punchIn fz    j       = fs j
+punchIn (fs i) fz     = fz
+punchIn (fs i) (fs j) = fs (punchIn i j)
+
 
 -- Well Founded Stuff
 
