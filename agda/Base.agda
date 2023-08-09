@@ -2,8 +2,8 @@ module Base where
 
 open import Agda.Builtin.Bool public
 open import Agda.Builtin.Char public
-open import Agda.Builtin.Equality public renaming ( _≡_ to _==_ )
-open import Agda.Builtin.List public renaming ( [] to nil ; _∷_ to _#_ )
+open import Agda.Builtin.Equality public
+open import Agda.Builtin.List public renaming ( [] to nil )
 open import Agda.Builtin.Maybe public renaming ( just to some ; nothing to none )
 open import Agda.Builtin.Nat public renaming ( suc to succ ; _==_ to eq )
 open import Agda.Builtin.String public
@@ -16,6 +16,24 @@ data Empty : Set where
 
 data Pair (a b : Set) : Set where
   pair : a -> b -> Pair a b
+
+infixr 1 _⊎_
+
+data _⊎_ {a b : Level} (A : Set a) (B : Set b) : Set (a ⊔ b) where
+  inj₁ : (x : A) → A ⊎ B
+  inj₂ : (y : B) → A ⊎ B
+
+[_,_] : ∀ {c : Level} {A B : Set} {C : A ⊎ B → Set c} →
+        ((x : A) → C (inj₁ x)) → ((x : B) → C (inj₂ x)) →
+        ((x : A ⊎ B) → C x)
+[ f , g ] (inj₁ x) = f x
+[ f , g ] (inj₂ y) = g y
+
+[_,_]′ : ∀ {A B C : Set} → (A → C) → (B → C) → (A ⊎ B → C)
+[_,_]′ = [_,_]
+
+id : ∀ {A : Set} → A → A
+id x = x
 
 infix 2 Σ-syntax
 
@@ -58,7 +76,7 @@ Not : {a : Level} -> Set a -> Set a
 Not a = a -> Empty
 
 _≢_ : {a : Level} {A : Set a} -> A -> A -> Set a
-x ≢ y = Not (x == y)
+x ≢ y = Not (x ≡ y)
 
 if : ∀ {a : Set} -> Bool -> a -> a -> a
 if true  t f = t
@@ -79,11 +97,11 @@ max (succ a) (succ b) = succ (max a b)
 
 len : ∀ {a : Set} -> List a -> Nat
 len nil      = 0
-len (x # xs) = succ (len xs)
+len (x ∷ xs) = succ (len xs)
 
 foldr : ∀ {a b : Set} -> (a -> b -> b) -> b -> List a -> b
 foldr f z nil      = z
-foldr f z (x # xs) = f x (foldr f z xs)
+foldr f z (x ∷ xs) = f x (foldr f z xs)
 
 mmap : ∀ {a b : Set} -> (a -> b) -> Maybe a -> Maybe b
 mmap f none     = none
@@ -97,21 +115,21 @@ Unwrap : ∀ {a : Set} -> Maybe a -> (a -> Set) -> Set
 Unwrap none     f = Unit
 Unwrap (some x) f = f x
 
-sym : ∀ {a} {A : Set a} {x y : A} -> x == y -> y == x
+sym : ∀ {a} {A : Set a} {x y : A} -> x ≡ y -> y ≡ x
 sym refl = refl
 
-trans : ∀ {A : Set} {x y z : A}
-  → x == y
-  → y == z
-  → x == z
+trans : ∀ {a} {A : Set a} {x y z : A}
+  → x ≡ y
+  → y ≡ z
+  → x ≡ z
 trans refl refl  =  refl
 
 
-apl : ∀ {a b} {A : Set a} {B : Set b} (f : A -> B) {x y : A} -> x == y -> f x == f y
+apl : ∀ {a b} {A : Set a} {B : Set b} (f : A -> B) {x y : A} -> x ≡ y -> f x ≡ f y
 apl f refl = refl
 
-rwt : ∀ {a} {A : Set a} {P : A → Set} {x y : A} -> x == y -> P x -> P y
-rwt refl px = px
+subst : ∀ {a} {A : Set a} {x y : A} → (P : A → Set) → x ≡ y → P x → P y
+subst P refl px = px
 
 IsSome : {a : Set} -> (x : Maybe a) -> Set
 IsSome none     = Empty
@@ -224,7 +242,7 @@ _∘_ : ∀ {a b c} {A : Set a} {B : A → Set b} {C : {x : A} → B x → Set c
 f ∘ g = λ x → f (g x)
 {-# INLINE _∘_ #-}
 
-cong : ∀ {A B : Set} {x y : A} → (f : A → B) → x == y → f x == f y
+cong : ∀ {A B : Set} {x y : A} → (f : A → B) → x ≡ y → f x ≡ f y
 cong f refl = refl
 
 
@@ -279,6 +297,105 @@ punchIn fz    j       = fs j
 punchIn (fs i) fz     = fz
 punchIn (fs i) (fs j) = fs (punchIn i j)
 
+-- canonical liftings of i:Fin m to larger index
+
+-- injection on the left: "i" ↑ˡ n = "i" in Fin (m + n)
+infixl 5 _↑ˡ_
+_↑ˡ_ : ∀ {m} → Fin m → ∀ n → Fin (m + n)
+fz    ↑ˡ n = fz
+(fs i) ↑ˡ n = fs (i ↑ˡ n)
+
+-- injection on the right: n ↑ʳ "i" = "n + i" in Fin (n + m)
+infixr 5 _↑ʳ_
+_↑ʳ_ : ∀ {m} n → Fin m → Fin (n + m)
+zero    ↑ʳ i = i
+(succ n) ↑ʳ i = fs (n ↑ʳ i)
+
+Sum-map : ∀ {A B C D : Set} → (A → C) → (B → D) → (A ⊎ B → C ⊎ D)
+Sum-map f g = [ inj₁ ∘ f , inj₂ ∘ g ]′
+
+
+module ≡-Reasoning {a : Level} {A : Set a} where
+
+  infix  3 _∎
+  infixr 2 _≡⟨⟩_ step-≡ step-≡˘
+  infix  1 begin_
+
+  begin_ : ∀{x y : A} → x ≡ y → x ≡ y
+  begin_ x≡y = x≡y
+
+  _≡⟨⟩_ : ∀ (x {y} : A) → x ≡ y → x ≡ y
+  _ ≡⟨⟩ x≡y = x≡y
+
+  step-≡ : ∀ (x {y z} : A) → y ≡ z → x ≡ y → x ≡ z
+  step-≡ _ y≡z x≡y = trans x≡y y≡z
+
+  step-≡˘ : ∀ (x {y z} : A) → y ≡ z → y ≡ x → x ≡ z
+  step-≡˘ _ y≡z y≡x = trans (sym y≡x) y≡z
+
+  _∎ : ∀ (x : A) → x ≡ x
+  _∎ _ = refl
+
+  syntax step-≡  x y≡z x≡y = x ≡⟨  x≡y ⟩ y≡z
+  syntax step-≡˘ x y≡z y≡x = x ≡˘⟨ y≡x ⟩ y≡z
+
+
+
+-- splitAt m "i" = inj₁ "i"      if i < m
+--                 inj₂ "i - m"  if i ≥ m
+-- This is dual to splitAt from Data.Vec.
+
+splitAt : ∀ {m n} → Fin (m + n) → Fin m ⊎ Fin n
+splitAt {zero}    i      = inj₂ i
+splitAt {succ m} fz    = inj₁ fz
+splitAt {succ m} (fs i) = Sum-map fs id (splitAt {m} i)
+
+-- inverse of above function
+join : ∀ {m n} → Fin m ⊎ Fin n → Fin (m + n)
+join {m} {n} = [ _↑ˡ n , m ↑ʳ_ ]′
+
+------------------------------------------------------------------------
+-- splitAt
+------------------------------------------------------------------------
+
+-- Fin (m + n) ↔ Fin m ⊎ Fin n
+
+splitAt-↑ˡ : ∀ m i n → splitAt {m} (i ↑ˡ n) ≡ inj₁ i
+splitAt-↑ˡ (succ m) fz    n = refl
+splitAt-↑ˡ (succ m) (fs i) n rewrite splitAt-↑ˡ m i n = refl
+
+splitAt⁻¹-↑ˡ : ∀ {m} {n} {i} {j} → splitAt {m} {n} i ≡ inj₁ j → j ↑ˡ n ≡ i
+splitAt⁻¹-↑ˡ {succ m} {n} {0F} {.0F} refl = refl
+splitAt⁻¹-↑ˡ {succ m} {n} {fs i} {j} eq with splitAt {m} i in splitAt[m][i]≡inj₁[j]
+... | inj₁ k with refl ← eq = cong fs (splitAt⁻¹-↑ˡ {i = i} {j = k} splitAt[m][i]≡inj₁[j])
+
+splitAt-↑ʳ : ∀ m n i → splitAt {m} (m ↑ʳ i) ≡ inj₂ {B = Fin n} i
+splitAt-↑ʳ zero    n i = refl
+splitAt-↑ʳ (succ m) n i rewrite splitAt-↑ʳ m n i = refl
+
+splitAt⁻¹-↑ʳ : ∀ {m} {n} {i} {j} → splitAt {m} {n} i ≡ inj₂ j → m ↑ʳ j ≡ i
+splitAt⁻¹-↑ʳ {zero}  {n} {i} {j} refl = refl
+splitAt⁻¹-↑ʳ {succ m} {n} {fs i} {j} eq with splitAt {m} i in splitAt[m][i]≡inj₂[k]
+... | inj₂ k with refl ← eq = cong fs (splitAt⁻¹-↑ʳ {i = i} {j = k} splitAt[m][i]≡inj₂[k])
+
+splitAt-join : ∀ m n i → splitAt {m} (join {m} {n} i) ≡ i
+splitAt-join m n (inj₁ x) = splitAt-↑ˡ m x n
+splitAt-join m n (inj₂ y) = splitAt-↑ʳ m n y
+
+
+postulate
+  -- TODO: would need to import a lot of stuff from std
+  join-splitAt : ∀ m n i → join {m} {n} (splitAt {m} i) ≡ i
+
+-- join-splitAt zero    n i       = refl
+-- join-splitAt (succ m) n zero    = refl
+-- join-splitAt (succ m) n (succ i) = begin
+--   [ _↑ˡ n , (succ m) ↑ʳ_ ]′ (splitAt (succ m) (fs i)) ≡⟨ [,]-map (splitAt m i) ⟩
+--   [ fs ∘ (_↑ˡ n) , fs ∘ (m ↑ʳ_) ]′ (splitAt m i)   ≡˘⟨ [,]-∘ suc (splitAt m i) ⟩
+--   fs ([ _↑ˡ n , m ↑ʳ_ ]′ (splitAt m i))             ≡⟨ cong fs (join-splitAt m n i) ⟩
+--   fs i                                                         ∎
+--   where open ≡-Reasoning
+
 
 -- Well Founded Stuff
 
@@ -299,4 +416,3 @@ WF< (succ x) = acc (λ y f -> aux x y f) where
   aux x .x <base = WF< x
   aux x  y (<step f) with WF< x
   ... | acc p = p y f
-
