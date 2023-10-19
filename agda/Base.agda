@@ -3,7 +3,7 @@ module Base where
 open import Agda.Builtin.Bool public
 open import Agda.Builtin.Char public
 open import Agda.Builtin.Equality public
-open import Agda.Builtin.List public renaming ( [] to nil )
+open import Agda.Builtin.List public
 open import Agda.Builtin.Maybe public renaming ( just to some ; nothing to none )
 open import Agda.Builtin.Nat public renaming ( suc to succ ; _==_ to eq )
 open import Agda.Builtin.String public
@@ -96,11 +96,11 @@ max a        zero     = a
 max (succ a) (succ b) = succ (max a b)
 
 len : ∀ {a : Set} -> List a -> Nat
-len nil      = 0
+len []      = 0
 len (x ∷ xs) = succ (len xs)
 
 foldr : ∀ {a b : Set} -> (a -> b -> b) -> b -> List a -> b
-foldr f z nil      = z
+foldr f z []      = z
 foldr f z (x ∷ xs) = f x (foldr f z xs)
 
 mmap : ∀ {a b : Set} -> (a -> b) -> Maybe a -> Maybe b
@@ -162,6 +162,10 @@ toWitness {A} {no ¬x} ()
 fromWitness : ∀ {A : Set} {D : Dec A} → A → T (erase D)
 fromWitness {A} {yes x} _  =  unit
 fromWitness {A} {no ¬x} x  =  ¬x x
+
+map′ : ∀ {P Q : Set} → (P → Q) → (Q → P) → Dec P → Dec Q
+map′ P→Q Q→P (yes p) = yes (P→Q p)
+map′ P→Q Q→P (no ¬p) = no λ{q → ¬p (Q→P q)}
 
 -- less-than-equal
 infix 4 _<=_
@@ -282,20 +286,34 @@ punchOut² {succ n} {fs i} {fs j} {0F} i≢j i≢k j≢k = punchOut (i≢j ∘ (
 punchOut² {zero} {_} {1F} {1F} i≢j i≢k j≢k = absurd (j≢k refl)
 punchOut² {succ n} {fs i} {fs j} {fs k} i≢j i≢k j≢k = fs (punchOut² (i≢j ∘ cong fs) (i≢k ∘ cong fs) (j≢k ∘ cong fs))
 
--- punchOut²' : ∀ {n : Nat} {x a b : Fin (succ (succ n))} → (x ≢ a) → (x ≢ b) → (a ≢ b) → Fin n
--- punchOut²' {_} {x} {a} {b} x≢a x≢b a≢b = {!!}
---   where
---   a' = punchOut a≢b
---   b' = punchOut (a≢b ∘ sym)
---   x'  = punchOut {i = ↑ a'} {j = x}  λ{ refl → {!!}}
---   x'' = punchOut {i = b'}   {j = x'} λ{x₁ → {!!}}
-  
-
 -- The function f(i,j) = if j≥i then j+1 else j
 punchIn : ∀ {n} → Fin (succ n) → Fin n → Fin (succ n)
 punchIn fz    j       = fs j
 punchIn (fs i) fz     = fz
 punchIn (fs i) (fs j) = fs (punchIn i j)
+
+
+punchIn-punchOut : ∀ {n} {i j : Fin (succ n)} (i≢j : i ≢ j) →
+                   punchIn i (punchOut i≢j) ≡ j
+punchIn-punchOut {_}     {fz}   {fz}  0≢0 = absurd (0≢0 refl)
+punchIn-punchOut {_}     {fz}   {fs j} _   = refl
+punchIn-punchOut {succ m} {fs i}  {fz}  i≢j = refl
+punchIn-punchOut {succ m} {fs i}  {fs j} i≢j =
+  cong fs (punchIn-punchOut (i≢j ∘ cong fs))
+
+suc-injective : ∀ {n} {i j : Fin n} → fs i ≡ fs j → i ≡ j
+suc-injective refl = refl
+
+punchIn-injective : ∀ {n} i (j k : Fin n) →
+                    punchIn i j ≡ punchIn i k → j ≡ k
+punchIn-injective fz     _      _      refl      = refl
+punchIn-injective (fs i) fz     fz     _         = refl
+punchIn-injective (fs i) (fs j) (fs k) ↑j+1≡↑k+1 =
+  cong fs (punchIn-injective i j k (suc-injective ↑j+1≡↑k+1))
+
+punchInᵢ≢i : ∀ {n} i (j : Fin n) → punchIn i j ≢ i
+punchInᵢ≢i (fs i) (fs j) = punchInᵢ≢i i j ∘ suc-injective
+
 
 -- canonical liftings of i:Fin m to larger index
 
